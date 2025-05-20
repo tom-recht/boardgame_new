@@ -1,27 +1,22 @@
-# python -m http.server 8000
-# python app.py
-# http://localhost:8000
-
-from flask import Flask, request, jsonify, Response
-from flask_cors import CORS, cross_origin
 import os
 import copy
+import logging
+from flask import Flask, request, jsonify, send_from_directory
+from flask_cors import CORS
 from game import Board
 from agent import Agent
-import logging
 
-logging.basicConfig(level=logging.DEBUG,
-                    format='%(asctime)s %(levelname)s %(message)s',
-                    handlers=[logging.StreamHandler()])
-
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s %(levelname)s %(message)s'
+)
 logger = logging.getLogger(__name__)
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-app = Flask(__name__, static_folder='', static_url_path='')
+app = Flask(__name__, static_folder=None)
 CORS(app)
-#CORS(app, resources={r"/*": {"origins": "https://tom-recht.github.io"}})
 
-# Initialize board
 board = Board()
 agent = Agent()
 
@@ -29,37 +24,32 @@ agent = Agent()
 def select_moves():
     try:
         state = request.json
-        logger.debug(f"Received state: {state}")
         board.update_state(state)
         moves = board.get_valid_moves(mask_offgoals=True)
-        logger.debug(f"Valid moves: {moves}")
         if moves:
-            chosen_moves = agent.select_move_pair(moves, board, board.current_player)
-            logger.debug(f"Chosen moves: {chosen_moves}")
-            return jsonify({"message": "Game state updated successfully", "move": chosen_moves}), 200
-        else:
-            return jsonify({"message": "No valid moves available"}), 200
+            chosen = agent.select_move_pair(moves, board, board.current_player)
+            return jsonify({"move": chosen}), 200
+        return jsonify({"message": "No valid moves"}), 200
     except Exception as e:
-        logger.error(f"Error: {e}")
-        return jsonify({"message": "An error occurred"}), 500
+        logger.error(e)
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/evaluate_board', methods=['POST'])
 def evaluate_board():
     try:
         state = request.json
-        logger.debug(f"Received state: {state}")
-        new_board = copy.deepcopy(board)
-        new_board.update_state(state)
-        _, eval = agent.evaluate(new_board, new_board.current_player)
-        if eval:
-            logger.debug(eval)
-            return jsonify({"message": "Game state updated successfully", "eval": eval}), 200
-        else:
-            return jsonify({"message": "No valid moves available"}), 200
+        newb = copy.deepcopy(board)
+        newb.update_state(state)
+        _, val = agent.evaluate(newb, newb.current_player)
+        return jsonify({"eval": val}), 200
     except Exception as e:
-        logger.error(f"Error: {e}")
-        return jsonify({"message": "An error occurred"}), 500
+        logger.error(e)
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/', defaults={'path': 'index.html'})
+@app.route('/<path:path>')
+def serve(path):
+    return send_from_directory(BASE_DIR, path)
 
 if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=8000)
